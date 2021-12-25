@@ -1,0 +1,78 @@
+#+TITLE: Vacances
+#+NAME: date_def
+#+begin_src emacs-lisp
+(defun my-calendar-count-weekend-days(date1 date2)
+  (let* ((tmp-date (if (< date1 date2) date1 date2))
+         (end-date (if (> date1 date2) date1 date2))
+         (weekend-days 0))
+    (while (<= tmp-date end-date)
+      (let ((day-of-week (calendar-day-of-week
+                          (calendar-gregorian-from-absolute tmp-date))))
+        (if (or (= day-of-week 0)
+                (= day-of-week 6))
+            (incf weekend-days ))
+        (incf tmp-date)))
+    weekend-days))
+;; (equal (my-calendar-count-weekend-days
+;;           (calendar-absolute-from-gregorian '(11 27 2021))
+;;           (calendar-absolute-from-gregorian '(11 28 2021))) 2)
+#+end_src
+
+#+RESULTS: date_def
+: my-calendar-count-weekend-days
+
+#+NAME: wrapper
+#+begin_src emacs-lisp :var date1="<2021-11-26 Fri>" date2="<2021-11-29 Mon>"
+(my-calendar-count-weekend-days
+ (org-time-string-to-absolute (concat "\"" date1 "\""))
+ (org-time-string-to-absolute (concat "\"" date2 "\""))
+ )
+#+end_src
+
+#+RESULTS: wrapper
+: 2
+
+#+begin_src emacs-lisp
+(defun org-sbx1 (name header args)
+  (let* ((args (mapconcat
+                (lambda (x)
+                  (format "%s=%S" (symbol-name (car x)) (cadr x)))
+                args ", "))
+         (ctx (list 'babel-call (list :call name
+                                      :name name
+                                      :inside-header header
+                                      :arguments args
+                                      :end-header ":results silent")))
+         (info (org-babel-lob-get-info ctx)))
+    (when info (org-babel-execute-src-block nil info))))
+
+(defmacro org-sbx (name &rest args)
+  (let* ((header (if (stringp (car args)) (car args) nil))
+	 (args (if (stringp (car args)) (cdr args) args)))
+    (unless (stringp name)
+      (setq name (symbol-name name)))
+    (let ((result (org-sbx1 name header args)))
+      (org-trim (if (stringp result) result (format "%S" result))))))
+
+#+end_src
+
+#+begin_src emacs-lisp
+(let ((dinit (org-time-string-to-absolute "<2020-10-01>"))
+      (dend 'current-time))
+        (print '(dinit dend))
+  )
+
+#+end_src
+#+RESULTS:
+| dinit | dend |
+
+| Start            | End              | Non-working | Total |
+|------------------+------------------+-------------+-------|
+| <2021-07-23 Fri> | <2021-07-23 Fri> |           0 |     1 |
+| <2021-08-02 Mon> | <2021-08-27 Fri> |           6 |    20 |
+| <2021-10-11 Mon> | <2021-10-11 Mon> |           0 |     1 |
+| <2021-12-07 Tue> | <2021-12-07 Tue> |           0 |     1 |
+| <2021-12-28 Tue> | <2021-12-28 Tue> |           0 |     1 |
+|------------------+------------------+-------------+-------|
+|                  |                  |             |    24 |
+#+TBLFM: @>$4=vsum(@2$4..@-1$4)::@>>$3='(org-sbx wrapper (date1 $1) (date2 $2))::$4=$2-$1-$3 + 1

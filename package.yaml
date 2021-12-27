@@ -28,6 +28,8 @@ dependencies:
 - vector
 - bytestring
 - raw-strings-qq
+- split
+- transformers
 
 library:
   source-dirs: src

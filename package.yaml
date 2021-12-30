@@ -44,6 +44,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - calendar-formal
+    - optparse-applicative >= 0.16
 
 tests:
   calendar-formal-test:

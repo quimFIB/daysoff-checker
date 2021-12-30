@@ -10,13 +10,11 @@ import Control.Applicative
 import Text.RawString.QQ
 import Text.Regex.TDFA
 
-import qualified Data.ByteString.Lazy as BL
-import Data.Csv
-import qualified Data.Vector as V
 import Data.Time
 import Data.List.Split
 import Data.List
 import Text.Read (readMaybe)
+import Data.Csv (FromNamedRecord, parseNamedRecord, (.:))
 
 data PrePeriod = PrePeriod
     { start :: !String
@@ -33,6 +31,10 @@ data Period = Period
 instance Ord Period where
   (Period s1 _) `compare` (Period s2 _) = s1 `compare` s2
 
+data MyError = DateStringInvalid String | OverlappingPeriods [Period] deriving Show
+
+type Merror a = Either MyError a
+
 getDate :: String
 getDate = [r|[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]|]
 
@@ -43,21 +45,26 @@ splitDate d = (year, month, day)
         day = s !! 2
         s = splitOn "-" (d =~ getDate :: String)
 
-fromPreToPeriod :: PrePeriod -> Maybe Period
-fromPreToPeriod p = do
-  yearS <- readMaybe yearS :: Maybe Integer
-  monthS <- readMaybe monthS :: Maybe Int
-  dayS <- readMaybe dayS :: Maybe Int
-  start <- fromGregorianValid yearS monthS dayS
-  yearE <- readMaybe yearE :: Maybe Integer
-  monthE <- readMaybe monthE :: Maybe Int
-  dayE <- readMaybe dayE :: Maybe Int
-  end <- fromGregorianValid yearE monthE dayE
-  return Period {pstart = start, pend = end}
-  where (yearS, monthS, dayS) = splitDate (start p)
-        (yearE, monthE, dayE) = splitDate (end p)
+dayFromStringMaybe :: String -> Maybe Day
+dayFromStringMaybe s = do
+  yearS <- readMaybe year :: Maybe Integer
+  monthS <- readMaybe month :: Maybe Int
+  dayS <- readMaybe day :: Maybe Int
+  fromGregorianValid yearS monthS dayS
+  where (year, month, day) = splitDate s
 
-getPeriods :: [PrePeriod] -> Maybe [Period]
+dayFromString :: String -> Merror Day
+dayFromString s = case dayFromStringMaybe s of
+                    Nothing -> Left (DateStringInvalid s)
+                    Just d -> Right d
+
+fromPreToPeriod :: PrePeriod -> Merror Period
+fromPreToPeriod p = do
+  start <- dayFromString (start p)
+  end <- dayFromString (end p)
+  return Period {pstart = start, pend = end}
+
+getPeriods :: [PrePeriod] -> Merror [Period]
 getPeriods l = sort <$> mapM fromPreToPeriod l
 
 countWeekends :: Day -> Day -> Integer
@@ -106,23 +113,25 @@ updateOffDays i p = OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMo
         newAvailableDays = computeOffDays (lastUpdate i) p + availableDays i
         flooredDays = floor $ 12 * daysoffPerMonth
 
-readfile :: String -> IO (Maybe [PrePeriod])
-readfile f = do
-  csvData <- BL.readFile f
-  case helper csvData of
-    Left err -> return Nothing
-    Right v -> return $ Just $ V.toList v
-    where helper :: BL.ByteString -> Either String (V.Vector PrePeriod)
-          helper = fmap snd . decodeByName
-
-preProcessPeriods :: [PrePeriod] -> Maybe [Period]
+preProcessPeriods :: [PrePeriod] -> Merror [Period]
 preProcessPeriods = fmap sort.mapM fromPreToPeriod
 
-computeOffDaySeq :: String -> [Period] -> Maybe OffDaysInfo
-computeOffDaySeq s l = do
-        yearS <- readMaybe year :: Maybe Integer
-        monthS <- readMaybe month :: Maybe Int
-        dayS <- readMaybe day :: Maybe Int
-        date0 <- fromGregorianValid yearS monthS dayS
-        return $ foldl updateOffDays OffDaysInfo {lastUpdate = date0, availableDays = 0, usedDays = 0} l
-  where (year, month, day) = splitDate s
+-- checkPeriodsPrecond :: [Period] -> Bool
+-- checkPeriodsPrecond =
+
+computeOffDaySeqFromString :: String -> [Period] -> Merror OffDaysInfo
+computeOffDaySeqFromString s l = do
+        date0 <- dayFromString s
+        return $ computeOffDaySeq date0 l
+
+computeOffDaySeq :: Day -> [Period] -> OffDaysInfo
+computeOffDaySeq d = foldl updateOffDays startInfo
+  where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
+
+computeOffDaySeqTrace :: Day -> [Period] -> [OffDaysInfo]
+-- computeOffDaySeqTrace d l = map (computeOffDaySeq d) (inits l)
+computeOffDaySeqTrace d = scanl updateOffDays startInfo
+  where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
+
+isCorrectOffDays :: [OffDaysInfo] -> Bool
+isCorrectOffDays = all ((0 <=) . availableDays)

@@ -4,56 +4,21 @@ module Main where
 
 import Control.Applicative
 import qualified Data.ByteString.Lazy as BL
+import Data.Csv (decodeByName)
+import qualified Data.Vector as V
 import Data.Time
 import System.Environment
-import Options.Applicative
+import Options.Applicative as O
 import Options.Applicative.Help.Pretty
 import Text.Read (readMaybe)
 import Data.List
 import Lib
 
-
-test :: Maybe [PrePeriod] -> Maybe [Period]
-test l = case l of
-           Nothing -> Nothing
-           Just l' -> mapM fromPreToPeriod l'
-
--- Dummy function, just to remind me of how this works
-test2 :: IO (Maybe [PrePeriod]) -> IO (Maybe [Period])
-test2 l = test <$> l
-
--- test3 :: Maybe [Period] -> Maybe [Period]
--- test3 l = case l of
---             Nothing -> Nothing
---             Just l' -> return $ sort l'
-
--- preProcess :: Maybe [PrePeriod] -> Maybe [Period]
--- preProcess l = fmap sort $ l >>= mapM fromPreToPeriod
-
--- what = map (map periodToWorkingDays) <$> days
-initDate = fromGregorian 2020 10 01
-todayDate = fromGregorian 2021 12 27
-s = fromGregorian 2021 12 08
-s2 = fromGregorian 2021 12 11
-e = fromGregorian 2021 12 16
-
--- days = aux <$> readfile
--- od0 = OffDaysInfo {lastUpdate = initDate, availableDays = 0, usedDays = 0}
--- updateInfo = (days, od0)
-
--- subseq = fmap inits <$> days
--- mytrace = fmap (map (foldl updateOffDays od0))  <$> subseq
-
--- main :: IO ()
--- main = do
---   dates <- readfile
---   case list of
---     Nothing -> putStrLn "nothing to show"
---     Just l -> print $ fmap (map (foldl updateOffDays od0)) list
-
+data Mode = Single | Trace
 data Options = Options {
   _initDate :: String,
-  _datesFile :: FilePath
+  _datesFile :: FilePath,
+  _mode :: Mode
   }
 
 parseOptions :: Parser Options
@@ -69,6 +34,10 @@ parseOptions = Options
                (metavar "DATES_FILE"
                 <> short 'f'
                 <> help "Path to a csv with the offdays dates")
+               <*> flag Single Trace
+               ( long "Traced computation"
+                 <> short 't'
+                 <> help "Return the trace of the computation" )
 
 descr :: ParserInfo Options
 descr = info (parseOptions <**> helper)
@@ -82,12 +51,30 @@ descr = info (parseOptions <**> helper)
   foot = bold "maintainer: " <> "Quim"
 
 
+readfile :: String -> IO (Either String [PrePeriod])
+readfile f = do
+  csvData <- BL.readFile f
+  case helper csvData of
+    Left err -> return $ Left err
+    Right v -> return $ Right (V.toList v)
+    where helper :: BL.ByteString -> Either String (V.Vector PrePeriod)
+          helper = fmap snd . decodeByName
+
 go :: Options -> IO ()
 go Options{..} = do
   dates <- readfile _datesFile
   case dates of
-    Nothing -> print "Something went wrong"
-    Just d -> print $ preProcessPeriods d >>= computeOffDaySeq _initDate
+    Left err -> print $ "Something went wrong " ++ err
+    Right d -> print computation
+      where computation = case _mode of
+              Single -> do
+                l <- preProcessPeriods d
+                day <- dayFromString _initDate
+                Right $ return $ computeOffDaySeq day l
+              Trace -> do
+                l <- preProcessPeriods d
+                day <- dayFromString _initDate
+                Right $ computeOffDaySeqTrace day l
 
 main :: IO ()
 main = execParser descr >>= go

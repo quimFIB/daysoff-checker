@@ -30,6 +30,7 @@ dependencies:
 - raw-strings-qq
 - split
 - transformers
+- mtl
 
 library:
   source-dirs: src

@@ -7,12 +7,14 @@ module Lib
 where
 
 import Control.Applicative
+import Control.Monad.Reader
 import Text.RawString.QQ
 import Text.Regex.TDFA
 
 import Data.Time
 import Data.List.Split
 import Data.List
+import Data.Foldable
 import Text.Read (readMaybe)
 import Data.Csv (FromNamedRecord, parseNamedRecord, (.:))
 
@@ -30,6 +32,10 @@ data Period = Period
     } deriving (Show, Eq)
 instance Ord Period where
   (Period s1 _) `compare` (Period s2 _) = s1 `compare` s2
+
+data MyEnv = MyEnv {daysCoeff :: Float} deriving Show
+
+type EnvReader a = Reader MyEnv a
 
 data MyError = DateStringInvalid String | OverlappingPeriods [Period] deriving Show
 
@@ -83,35 +89,31 @@ howManyWorking s e = total - weekend
 spentDays :: [Period] -> Integer
 spentDays = sum . map computeWorkingDays
 
-daysoffPerMonth :: Float
-daysoffPerMonth = 2.5
-
-remainingOffDays :: Day -> Day -> Integer -> Integer
-remainingOffDays s e usedDays = min (generatedDays - usedDays) flooredDays
-  where currentMonths = diffGregorianDurationClip e s
-        generatedDays = floor $ fromInteger (cdMonths currentMonths) * daysoffPerMonth
-        flooredDays = floor $ 12 * daysoffPerMonth
-
-computeOffDays :: Day -> Period -> Integer
-computeOffDays i0 p = min generatedDays flooredDays
+computeOffDays :: Day -> Period -> EnvReader Integer
+computeOffDays i0 p = do
+  env <- ask
+  return $ min (generatedDays (daysCoeff env)) (flooredDays (daysCoeff env))
   where s = pstart p
         e = pend p
         currentMonths = diffGregorianDurationClip s i0
-        generatedDays = floor $ fromInteger (cdMonths currentMonths) * daysoffPerMonth
-        flooredDays = floor $ 12 * daysoffPerMonth
+        generatedDays c = floor $ fromInteger (cdMonths currentMonths) * c
+        flooredDays c = floor $ 12 * c
 
 data OffDaysInfo = OffDaysInfo { lastUpdate :: Day,
                                  availableDays :: Integer,
                                  usedDays :: Integer } deriving (Show)
 
-updateOffDays :: OffDaysInfo -> Period -> OffDaysInfo
-updateOffDays i p = OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
-                                  availableDays = min newAvailableDays flooredDays - newUsedDays,
-                                  usedDays = newUsedDays }
+updateOffDays :: OffDaysInfo -> Period -> EnvReader OffDaysInfo
+updateOffDays i p = do
+  env <- ask
+  cOffDas <- computeOffDays (lastUpdate i) p
+  return $ OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
+                         availableDays = min (newAvailableDays cOffDas) (flooredDays (daysCoeff env)) - newUsedDays,
+                         usedDays = newUsedDays }
   where newUsedDays = computeWorkingDays p
         currentMonths = diffGregorianDurationClip (pend p) (lastUpdate i)
-        newAvailableDays = computeOffDays (lastUpdate i) p + availableDays i
-        flooredDays = floor $ 12 * daysoffPerMonth
+        newAvailableDays offdays = offdays + availableDays i
+        flooredDays c = floor $ 12 * c
 
 preProcessPeriods :: [PrePeriod] -> Merror [Period]
 preProcessPeriods = fmap sort.mapM fromPreToPeriod
@@ -119,18 +121,20 @@ preProcessPeriods = fmap sort.mapM fromPreToPeriod
 -- checkPeriodsPrecond :: [Period] -> Bool
 -- checkPeriodsPrecond =
 
-computeOffDaySeqFromString :: String -> [Period] -> Merror OffDaysInfo
-computeOffDaySeqFromString s l = do
-        date0 <- dayFromString s
-        return $ computeOffDaySeq date0 l
+computeOffDaySeqFromString :: String -> [Period] -> EnvReader (Merror OffDaysInfo)
+computeOffDaySeqFromString s l = case dayFromString s of
+                                   Left err -> return $ Left err
+                                   Right d -> mapReader Right (computeOffDaySeq d l)
 
-computeOffDaySeq :: Day -> [Period] -> OffDaysInfo
-computeOffDaySeq d = foldl updateOffDays startInfo
+
+computeOffDaySeq :: Day -> [Period] -> EnvReader OffDaysInfo
+computeOffDaySeq d = foldlM updateOffDays startInfo
   where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
 
-computeOffDaySeqTrace :: Day -> [Period] -> [OffDaysInfo]
+computeOffDaySeqTrace :: Day -> [Period] -> EnvReader [OffDaysInfo]
 -- computeOffDaySeqTrace d l = map (computeOffDaySeq d) (inits l)
-computeOffDaySeqTrace d = scanl updateOffDays startInfo
+-- computeOffDaySeqTrace d = scanl updateOffDays startInfo
+computeOffDaySeqTrace d l = mapM (foldlM updateOffDays startInfo) (inits l)
   where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
 
 isCorrectOffDays :: [OffDaysInfo] -> Bool

@@ -12,12 +12,14 @@ import Options.Applicative as O
 import Options.Applicative.Help.Pretty
 import Text.Read (readMaybe)
 import Data.List
+import Control.Monad.Reader
 import Lib
 
 data Mode = Single | Trace
 data Options = Options {
   _initDate :: String,
   _datesFile :: FilePath,
+  _daysCoeff :: String,
   _mode :: Mode
   }
 
@@ -34,6 +36,10 @@ parseOptions = Options
                (metavar "DATES_FILE"
                 <> short 'f'
                 <> help "Path to a csv with the offdays dates")
+               <*> strOption
+               (metavar "daysoff_coef"
+                <> short 'c'
+                <> help "daysoff generated per month")
                <*> flag Single Trace
                ( long "Traced computation"
                  <> short 't'
@@ -65,16 +71,18 @@ go Options{..} = do
   dates <- readfile _datesFile
   case dates of
     Left err -> print $ "Something went wrong " ++ err
-    Right d -> print computation
-      where computation = case _mode of
-              Single -> do
-                l <- preProcessPeriods d
-                day <- dayFromString _initDate
-                Right $ return $ computeOffDaySeq day l
-              Trace -> do
-                l <- preProcessPeriods d
-                day <- dayFromString _initDate
-                Right $ computeOffDaySeqTrace day l
+    Right d -> case readMaybe _daysCoeff of
+      Nothing -> print $ "Something went wrong transforming days coefficient"
+      Just c -> print computation
+        where computation = case _mode of
+                Single -> do
+                  l <- preProcessPeriods d
+                  day <- dayFromString _initDate
+                  Right $ return $ runReader (computeOffDaySeq day l) (MyEnv {daysCoeff = c})
+                Trace -> do
+                  l <- preProcessPeriods d
+                  day <- dayFromString _initDate
+                  Right $ runReader (computeOffDaySeqTrace day l) (MyEnv {daysCoeff = c})
 
 main :: IO ()
 main = execParser descr >>= go

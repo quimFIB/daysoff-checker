@@ -66,23 +66,28 @@ readfile f = do
     where helper :: BL.ByteString -> Either String (V.Vector PrePeriod)
           helper = fmap snd . decodeByName
 
+compute :: Options -> [PrePeriod] -> Merror [OffDaysInfo]
+compute Options{..} d = case (readMaybe _daysCoeff) :: Maybe Float of
+      Nothing -> Left $ DateStringInvalid _daysCoeff
+      Just c -> do
+                l <- preProcessPeriods d
+                if checkPeriodsPrecond l then
+                  do
+                    day <- dayFromString _initDate
+                    case _mode of
+                      Single -> do
+                        Right $ return $ runReader (computeOffDaySeq day l) (MyEnv {daysCoeff = c})
+                      Trace -> do
+                        Right $ runReader (computeOffDaySeqTrace day l) (MyEnv {daysCoeff = c})
+                else Left $ OverlappingPeriods l
 go :: Options -> IO ()
-go Options{..} = do
+go o@Options{..} = do
   dates <- readfile _datesFile
   case dates of
     Left err -> print $ "Something went wrong " ++ err
-    Right d -> case readMaybe _daysCoeff of
-      Nothing -> print $ "Something went wrong transforming days coefficient"
-      Just c -> print computation
-        where computation = case _mode of
-                Single -> do
-                  l <- preProcessPeriods d
-                  day <- dayFromString _initDate
-                  Right $ return $ runReader (computeOffDaySeq day l) (MyEnv {daysCoeff = c})
-                Trace -> do
-                  l <- preProcessPeriods d
-                  day <- dayFromString _initDate
-                  Right $ runReader (computeOffDaySeqTrace day l) (MyEnv {daysCoeff = c})
+    Right d ->  case compute o d of
+      Left err -> print err
+      Right result -> print result
 
 main :: IO ()
 main = execParser descr >>= go

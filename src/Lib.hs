@@ -118,8 +118,10 @@ updateOffDays i p = do
 preProcessPeriods :: [PrePeriod] -> Merror [Period]
 preProcessPeriods = fmap sort.mapM fromPreToPeriod
 
--- checkPeriodsPrecond :: [Period] -> Bool
--- checkPeriodsPrecond =
+checkPeriodsPrecond :: [Period] -> Bool
+checkPeriodsPrecond l = and $ zipWith (<=) ends starts
+  where starts = drop 1 $ map pstart l
+        ends = map pend l
 
 computeOffDaySeqFromString :: String -> [Period] -> EnvReader (Merror OffDaysInfo)
 computeOffDaySeqFromString s l = case dayFromString s of

@@ -37,7 +37,8 @@ data MyEnv = MyEnv {daysCoeff :: Float} deriving Show
 
 type EnvReader a = Reader MyEnv a
 
-data MyError = DateStringInvalid String | OverlappingPeriods [Period] deriving Show
+data MyError = DateStringInvalid String | OverlappingPeriods [Period]
+             | NegativeAvailableDays [OffDaysInfo] deriving Show
 
 type Merror a = Either MyError a
 
@@ -122,6 +123,9 @@ checkPeriodsPrecond :: [Period] -> Bool
 checkPeriodsPrecond l = and $ zipWith (<=) ends starts
   where starts = drop 1 $ map pstart l
         ends = map pend l
+
+checkOffDaysCorrect :: [OffDaysInfo] -> Bool
+checkOffDaysCorrect = all ((0 <= ) . availableDays)
 
 computeOffDaySeqFromString :: String -> [Period] -> EnvReader (Merror OffDaysInfo)
 computeOffDaySeqFromString s l = case dayFromString s of

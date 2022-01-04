@@ -1,10 +1,10 @@
-name:                calendar-formal
+name:                daysoff-checker
 version:             0.1.0.0
-github:              "githubuser/calendar-formal"
+github:              "quimFIB/daysoff-checker"
 license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2021 Author name here"
+author:              "Quim"
+maintainer:          "quimFIB@github.com"
+copyright:           "2022 quimFIB"
 
 extra-source-files:
 - README.md
@@ -17,7 +17,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/calendar-formal#readme>
+description:         Please see the README on GitHub at <https://github.com/quimFIB/daysoff-checker#readme>
 
 dependencies:
 - base >= 4.7 && < 5
@@ -36,7 +36,7 @@ library:
   source-dirs: src
 
 executables:
-  calendar-formal-exe:
+  daysoff-checker:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -44,11 +44,11 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - calendar-formal
+    - daysoff-checker
     - optparse-applicative >= 0.16
 
 tests:
-  calendar-formal-test:
+  daysoff-checker-test:
     main:                Spec.hs
     source-dirs:         test
     ghc-options:
@@ -56,4 +56,4 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - calendar-formal
+    - daysoff-checker

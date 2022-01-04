@@ -17,6 +17,7 @@ import Data.List
 import Data.Foldable
 import Text.Read (readMaybe)
 import Data.Csv (FromNamedRecord, parseNamedRecord, (.:))
+import Control.Monad.Trans.Except
 
 data PrePeriod = PrePeriod
     { start :: !String
@@ -41,6 +42,8 @@ data MyError = DateStringInvalid String | OverlappingPeriods [Period]
              | NegativeAvailableDays [OffDaysInfo] deriving Show
 
 type Merror a = Either MyError a
+
+type EnvError a = ExceptT (Either MyError a) (Reader MyEnv) a
 
 getDate :: String
 getDate = [r|[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]|]
@@ -127,10 +130,11 @@ checkPeriodsPrecond l = and $ zipWith (<=) ends starts
 checkOffDaysCorrect :: [OffDaysInfo] -> Bool
 checkOffDaysCorrect = all ((0 <= ) . availableDays)
 
-computeOffDaySeqFromString :: String -> [Period] -> EnvReader (Merror OffDaysInfo)
+-- type EnvError a = ExceptT (Either MyError a) (Reader MyEnv) a
+computeOffDaySeqFromString :: String -> [Period] -> EnvError OffDaysInfo
 computeOffDaySeqFromString s l = case dayFromString s of
-                                   Left err -> return $ Left err
-                                   Right d -> mapReader Right (computeOffDaySeq d l)
+                                   Left err -> throwE $ Left err
+                                   Right d -> lift $ computeOffDaySeq d l
 
 
 computeOffDaySeq :: Day -> [Period] -> EnvReader OffDaysInfo

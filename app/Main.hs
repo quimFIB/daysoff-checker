@@ -29,33 +29,29 @@ parseOptions = Options
                (long "initial-date"
                 <> short 'd'
                 <> metavar "init_date"
-                <> showDefault
-                <> value "build"
                 <> help "Date to start calculating offdays")
                <*> strOption
-               (metavar "DATES_FILE"
+               (long "file"
+                <> metavar "dates_file"
                 <> short 'f'
                 <> help "Path to a csv with the offdays dates")
                <*> strOption
-               (metavar "daysoff_coef"
+               (long "daysoff-coeff"
+                <> metavar "daysoff_coef"
                 <> short 'c'
                 <> help "daysoff generated per month")
                <*> flag Single Trace
-               ( long "Traced computation"
+               ( long "traced-computation"
                  <> short 't'
                  <> help "Return the trace of the computation" )
 
 descr :: ParserInfo Options
 descr = info (parseOptions <**> helper)
        (fullDesc
-        <> progDesc "Parse an org mode file with a datalang specification and compile it to all available formats."
-        <> headerDoc (Just $ dullblue $ bold $ underline "datalang help")
-        <> footerDoc (Just foot)
+        <> progDesc "Given a set of request dates for days off, computes whether that request is valid, i.e if the employee has enough offdays generated"
+        <> headerDoc (Just $ dullblue $ bold $ underline "program help")
+        <> footerDoc (Just $ bold "maintainer: " <> "Quim")
        )
-  where
-  foot :: Doc
-  foot = bold "maintainer: " <> "Quim"
-
 
 readfile :: String -> IO (Either String [PrePeriod])
 readfile f = do
@@ -67,7 +63,7 @@ readfile f = do
           helper = fmap snd . decodeByName
 
 compute :: Options -> [PrePeriod] -> Merror [OffDaysInfo]
-compute Options{..} d = case (readMaybe _daysCoeff) :: Maybe Float of
+compute Options {..} d = case readMaybe _daysCoeff :: Maybe Float of
       Nothing -> Left $ DateStringInvalid _daysCoeff
       Just c -> do
                 l <- preProcessPeriods d

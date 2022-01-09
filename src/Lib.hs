@@ -1,5 +1,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE UnicodeSyntax #-}
 
 module Lib
     -- ( someFunc
@@ -18,6 +19,7 @@ import Data.Foldable
 import Text.Read (readMaybe)
 import Data.Csv (FromNamedRecord, parseNamedRecord, (.:))
 import Control.Monad.Trans.Except
+import Data.Maybe
 
 data PrePeriod = PrePeriod
     { start :: !String
@@ -34,7 +36,7 @@ data Period = Period
 instance Ord Period where
   (Period s1 _) `compare` (Period s2 _) = s1 `compare` s2
 
-data MyEnv = MyEnv {daysCoeff :: Float} deriving Show
+data MyEnv = MyEnv {daysCoeff :: Float, generalHolidays :: [Period]} deriving Show
 
 type EnvReader a = Reader MyEnv a
 
@@ -77,18 +79,48 @@ fromPreToPeriod p = do
 getPeriods :: [PrePeriod] -> Merror [Period]
 getPeriods l = sort <$> mapM fromPreToPeriod l
 
+(⊂) :: Period -> Period -> Bool
+(⊂) p0 p1 = start1 <= start0 && end0 <= end1
+  where start0 = pstart p0
+        end0 = pend p0
+        start1 = pstart p1
+        end1 = pend p1
+complement :: Period -> Period -> Period
+complement p p'
+  | p <= p' = case intersection of
+                Nothing -> p
+                Just pInter -> Period {pstart = pstart p, pend = pend pInter}
+  | otherwise = case intersection of
+                  Nothing -> p
+                  Just pInter -> Period {pstart = pend pInter, pend = pend p}
+  where
+      intersection = intersectP p p'
+      complementAux p0 p1 = case intersection of
+                              Nothing -> p0
+                              Just pInter -> Period {pstart = pstart p0, pend = pend pInter}
+intersectP :: Period -> Period -> Maybe Period
+intersectP p p'
+  | p1 ⊂ p0 = Just p1
+  | pend p0 < pstart p1 = Nothing
+  | otherwise = Just Period {pstart = pstart p1, pend = pend p0}
+  where
+      (p0, p1) = if p <= p' then (p, p') else (p', p)
+
+periodLength :: Period -> Integer
+periodLength p = pend p - pstart p + 1
+
 countWeekends :: Day -> Day -> Integer
 countWeekends s e = toInteger $ length (filter isweekend list)
   where list = takeWhile (<= e) (iterate (addDays 1) s)
         isweekend d = dayOfWeek d == Saturday || dayOfWeek d == Sunday
 
 computeWorkingDays :: Period -> Integer
-computeWorkingDays p = howManyWorking (pstart p) (pend p)
+computeWorkingDays p = howManyAccountable (pstart p) (pend p)
 
-howManyWorking :: Day -> Day -> Integer
-howManyWorking s e = total - weekend
+howManyAccountable :: Day -> Day -> Integer
+howManyAccountable s e = total - general
   where  total = diffDays e s + 1
-         weekend = countWeekends s e
+         general = countGeneralOffDays e
 
 spentDays :: [Period] -> Integer
 spentDays = sum . map computeWorkingDays
@@ -113,7 +145,7 @@ updateOffDays i p = do
   cOffDas <- computeOffDays (lastUpdate i) p
   return $ OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
                          availableDays = min (newAvailableDays cOffDas) (flooredDays (daysCoeff env)) - newUsedDays,
-                         usedDays = newUsedDays }
+                         usedDays = usedDays i + newUsedDays }
   where newUsedDays = computeWorkingDays p
         currentMonths = diffGregorianDurationClip (pend p) (lastUpdate i)
         newAvailableDays offdays = offdays + availableDays i
@@ -149,3 +181,16 @@ computeOffDaySeqTrace d l = mapM (foldlM updateOffDays startInfo) (inits l)
 
 isCorrectOffDays :: [OffDaysInfo] -> Bool
 isCorrectOffDays = all ((0 <=) . availableDays)
+
+splitPeriodList :: Period
+                     -> [Period] -- ^ Assumed ascending order
+                     -> ([Period], [Period]) -- ^ fst is the list of intersections of the periods with the first argument period
+splitPeriodList p l
+  | null reversedPeriods = ([], snd <$> tailPeriods)
+  | otherwise = (reverse reversedPeriods, complement (head reversedPeriods) p : (snd <$> tailPeriods))
+  where (headPeriods, tailPeriods) =  span testingFunc $ map (\x -> (intersectP p x, x)) l
+        reversedPeriods = reverse $ catMaybes $ fst <$> headPeriods
+        testingFunc p' = (isJust . fst) p' || (pend . snd) p' <= pend p
+
+computeDaysInPeriod :: [Period] -> Integer
+computeDaysInPeriod = sum.map periodLength

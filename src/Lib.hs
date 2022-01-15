@@ -20,6 +20,9 @@ import Text.Read (readMaybe)
 import Data.Csv (FromNamedRecord, parseNamedRecord, (.:))
 import Control.Monad.Trans.Except
 import Data.Maybe
+import Control.Monad.State (StateT, get, put)
+import Control.Monad.Trans.State.Lazy (State)
+import Control.Monad.Identity (Identity)
 
 data PrePeriod = PrePeriod
     { start :: !String
@@ -36,7 +39,7 @@ data Period = Period
 instance Ord Period where
   (Period s1 _) `compare` (Period s2 _) = s1 `compare` s2
 
-data MyEnv = MyEnv {daysCoeff :: Float, generalHolidays :: [Period]} deriving Show
+data MyEnv = MyEnv {daysCoeff :: Float, gHolidays :: [Period]} deriving Show
 
 type EnvReader a = Reader MyEnv a
 
@@ -45,7 +48,10 @@ data MyError = DateStringInvalid String | OverlappingPeriods [Period]
 
 type Merror a = Either MyError a
 
-type EnvError a = ExceptT (Either MyError a) (Reader MyEnv) a
+-- type EnvError a = ExceptT (Either MyError a) (Reader MyEnv) a
+type EnvError a = ExceptT (Either MyError a) (StateT MyEnv Identity) a
+
+type MyState a = StateT MyEnv Identity a
 
 getDate :: String
 getDate = [r|[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]|]
@@ -106,29 +112,45 @@ intersectP p p'
   where
       (p0, p1) = if p <= p' then (p, p') else (p', p)
 
+-- generalPeriod :: [Period] -> Maybe Period
+-- generalPeriod [] = Nothing
+generalPeriod :: [Period] -> Period
+generalPeriod ps = Period {pstart = pstart (head sortedps), pend = pend (last sortedps)}
+  where sortedps = sort ps
+generateWeekends :: Period -> [Period]
+generateWeekends p = zipWith Period saturdays sundays
+  where list = takeWhile (<= checkedEnd) (iterate (addDays 1) checkedStart)
+        isweekend d = dayOfWeek d == Saturday || dayOfWeek d == Sunday
+        weekends = zip [1..] $ filter isweekend list
+        checkedStart = if dayOfWeek (pstart p) == Sunday then addDays (-1) (pstart p)
+                       else pstart p
+        checkedEnd = if dayOfWeek (pend p) == Saturday then addDays 1 (pend p)
+                     else pend p
+        saturdays = map snd $ filter (odd.fst) weekends
+        sundays = map snd $ filter (even.fst) weekends
 periodLength :: Period -> Integer
-periodLength p = pend p - pstart p + 1
+periodLength p = diffDays (pend p) (pstart p) + 1
 
 countWeekends :: Day -> Day -> Integer
 countWeekends s e = toInteger $ length (filter isweekend list)
   where list = takeWhile (<= e) (iterate (addDays 1) s)
         isweekend d = dayOfWeek d == Saturday || dayOfWeek d == Sunday
 
-computeWorkingDays :: Period -> Integer
-computeWorkingDays p = howManyAccountable (pstart p) (pend p)
+computeWorkingDays :: [Period] -> Period -> Integer
+computeWorkingDays ps p = howManyAccountable ps (pstart p) (pend p)
 
-howManyAccountable :: Day -> Day -> Integer
-howManyAccountable s e = total - general
+howManyAccountable :: [Period] -> Day -> Day -> Integer
+howManyAccountable ps s e = total - general
   where  total = diffDays e s + 1
-         general = countGeneralOffDays e
+         general = sum $ map periodLength ps
 
-spentDays :: [Period] -> Integer
-spentDays = sum . map computeWorkingDays
+spentDays :: [Period] -> [Period] -> Integer
+spentDays ps = sum . map (computeWorkingDays ps)
 
-computeOffDays :: Day -> Period -> EnvReader Integer
+computeOffDays :: Day -> Period -> State MyEnv Integer
 computeOffDays i0 p = do
-  env <- ask
-  return $ min (generatedDays (daysCoeff env)) (flooredDays (daysCoeff env))
+  s <- get
+  return $ min (generatedDays (daysCoeff s)) (flooredDays (daysCoeff s))
   where s = pstart p
         e = pend p
         currentMonths = diffGregorianDurationClip s i0
@@ -139,17 +161,20 @@ data OffDaysInfo = OffDaysInfo { lastUpdate :: Day,
                                  availableDays :: Integer,
                                  usedDays :: Integer } deriving (Show)
 
-updateOffDays :: OffDaysInfo -> Period -> EnvReader OffDaysInfo
+updateOffDays :: OffDaysInfo -> Period -> MyState OffDaysInfo
 updateOffDays i p = do
-  env <- ask
+  s <- get
+  (before, after) <- return $ splitPeriodList p (gHolidays s)
+  put MyEnv {daysCoeff = daysCoeff s, gHolidays = after}
   cOffDas <- computeOffDays (lastUpdate i) p
+  let newUsedDays = computeWorkingDays before p
   return $ OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
-                         availableDays = min (newAvailableDays cOffDas) (flooredDays (daysCoeff env)) - newUsedDays,
+                         availableDays = min (newAvailableDays cOffDas) (flooredDays (daysCoeff s)) - newUsedDays,
                          usedDays = usedDays i + newUsedDays }
-  where newUsedDays = computeWorkingDays p
-        currentMonths = diffGregorianDurationClip (pend p) (lastUpdate i)
+  where currentMonths = diffGregorianDurationClip (pend p) (lastUpdate i)
         newAvailableDays offdays = offdays + availableDays i
         flooredDays c = floor $ 12 * c
+
 
 preProcessPeriods :: [PrePeriod] -> Merror [Period]
 preProcessPeriods = fmap sort.mapM fromPreToPeriod
@@ -169,11 +194,11 @@ computeOffDaySeqFromString s l = case dayFromString s of
                                    Right d -> lift $ computeOffDaySeq d l
 
 
-computeOffDaySeq :: Day -> [Period] -> EnvReader OffDaysInfo
+computeOffDaySeq :: Day -> [Period] -> MyState OffDaysInfo
 computeOffDaySeq d = foldlM updateOffDays startInfo
   where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
 
-computeOffDaySeqTrace :: Day -> [Period] -> EnvReader [OffDaysInfo]
+computeOffDaySeqTrace :: Day -> [Period] -> MyState [OffDaysInfo]
 -- computeOffDaySeqTrace d l = map (computeOffDaySeq d) (inits l)
 -- computeOffDaySeqTrace d = scanl updateOffDays startInfo
 computeOffDaySeqTrace d l = mapM (foldlM updateOffDays startInfo) (inits l)

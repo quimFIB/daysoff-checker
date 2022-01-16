@@ -21,6 +21,7 @@ data Mode = Single | Trace
 data Options = Options {
   _initDate :: String,
   _datesFile :: FilePath,
+  _holidaysFile :: FilePath,
   _daysCoeff :: String,
   _mode :: Mode
   }
@@ -37,6 +38,12 @@ parseOptions = Options
                 <> metavar "dates_file"
                 <> short 'f'
                 <> help "Path to a csv with the offdays dates")
+               <*> strOption
+               (long "file_holidays"
+                <> metavar "holidays_file"
+                <> short 'h'
+                <> value "#.no-file"
+                <> help "Path to a csv with the general holidays")
                <*> strOption
                (long "daysoff-coeff"
                 <> metavar "daysoff_coef"
@@ -64,28 +71,35 @@ readfile f = do
     where helper :: BL.ByteString -> Either String (V.Vector PrePeriod)
           helper = fmap snd . decodeByName
 
-compute :: Options -> [PrePeriod] -> Merror [OffDaysInfo]
-compute Options {..} d = case readMaybe _daysCoeff :: Maybe Float of
+compute :: Options -> [PrePeriod] -> [PrePeriod] -> Merror [OffDaysInfo]
+compute Options {..} d h = case readMaybe _daysCoeff :: Maybe Float of
       Nothing -> Left $ DateStringInvalid _daysCoeff
       Just c -> do
-                l <- preProcessPeriods d
-                if checkPeriodsPrecond l then
-                  do
-                    day <- dayFromString _initDate
-                    case _mode of
-                      Single -> do
-                        Right $ return $ runReader (evalStateT (computeOffDaySeq day l) (generateWeekends (generalPeriod l))) c
-                      Trace -> do
-                        Right $ runReader (evalStateT (computeOffDaySeqTrace day l) (generateWeekends (generalPeriod l))) c
-                else Left $ OverlappingPeriods l
+        h <- preProcessPeriods h
+        l <- preProcessPeriods d
+        if checkPeriodsPrecond l then
+                do
+                day <- dayFromString _initDate
+                let weekends = generateWeekends (generalPeriod l)
+                case _mode of
+                        Single -> do
+                                -- Right $ return $ runReader (evalStateT (computeOffDaySeq day l) (generateWeekends (generalPeriod l))) c
+                                Right $ return $ runReader (evalStateT (computeOffDaySeq day l) (h ++ weekends)) c
+                        Trace -> do
+                                -- Right $ runReader (evalStateT (computeOffDaySeqTrace day l) (generateWeekends (generalPeriod l))) c
+                                Right $ runReader (evalStateT (computeOffDaySeqTrace day l) (h ++ weekends)) c
+        else Left $ OverlappingPeriods l
 go :: Options -> IO ()
 go o@Options{..} = do
   dates <- readfile _datesFile
+  holidays <- readfile _holidaysFile
   case dates of
     Left err -> print $ "Something went wrong " ++ err
-    Right d ->  case compute o d of
-      Left err -> print err
-      Right result -> print result
+    Right d ->  case holidays of
+      Left err -> print $ "Something went wrong" ++ err
+      Right h -> case compute o d h of
+                 Left err -> print err
+                 Right result -> print result
 
 main :: IO ()
 main = execParser descr >>= go

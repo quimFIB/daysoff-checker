@@ -49,9 +49,9 @@ data MyError = DateStringInvalid String | OverlappingPeriods [Period]
 type Merror a = Either MyError a
 
 -- type EnvError a = ExceptT (Either MyError a) (Reader MyEnv) a
-type EnvError a = ExceptT (Either MyError a) (StateT MyEnv Identity) a
+type EnvError a = ExceptT (Either MyError a) (StateT [Period] (Reader Float)) a
 
-type MyState a = StateT MyEnv Identity a
+type MyState a = StateT [Period] (Reader Float) a
 
 getDate :: String
 getDate = [r|[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]|]
@@ -147,10 +147,10 @@ howManyAccountable ps s e = total - general
 spentDays :: [Period] -> [Period] -> Integer
 spentDays ps = sum . map (computeWorkingDays ps)
 
-computeOffDays :: Day -> Period -> State MyEnv Integer
+computeOffDays :: Day -> Period -> Reader Float Integer
 computeOffDays i0 p = do
-  s <- get
-  return $ min (generatedDays (daysCoeff s)) (flooredDays (daysCoeff s))
+  dCoeff <- ask
+  return $ min (generatedDays dCoeff) (flooredDays dCoeff)
   where s = pstart p
         e = pend p
         currentMonths = diffGregorianDurationClip s i0
@@ -163,13 +163,14 @@ data OffDaysInfo = OffDaysInfo { lastUpdate :: Day,
 
 updateOffDays :: OffDaysInfo -> Period -> MyState OffDaysInfo
 updateOffDays i p = do
-  s <- get
-  (before, after) <- return $ splitPeriodList p (gHolidays s)
-  put MyEnv {daysCoeff = daysCoeff s, gHolidays = after}
-  cOffDas <- computeOffDays (lastUpdate i) p
+  gHolidays <- get
+  (before, after) <- return $ splitPeriodList p gHolidays
+  put after
+  cOffDas <- lift $ computeOffDays (lastUpdate i) p
+  dCoeff <- lift ask
   let newUsedDays = computeWorkingDays before p
   return $ OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
-                         availableDays = min (newAvailableDays cOffDas) (flooredDays (daysCoeff s)) - newUsedDays,
+                         availableDays = min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
                          usedDays = usedDays i + newUsedDays }
   where currentMonths = diffGregorianDurationClip (pend p) (lastUpdate i)
         newAvailableDays offdays = offdays + availableDays i

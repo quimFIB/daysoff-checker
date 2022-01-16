@@ -14,6 +14,7 @@ import Text.Read (readMaybe)
 import Data.List
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Trans.State.Lazy (State)
 import Lib
 
 data Mode = Single | Trace
@@ -73,9 +74,9 @@ compute Options {..} d = case readMaybe _daysCoeff :: Maybe Float of
                     day <- dayFromString _initDate
                     case _mode of
                       Single -> do
-                        Right $ return $ evalState (computeOffDaySeq day l) (MyEnv {daysCoeff = c, gHolidays = generateWeekends (generalPeriod l)})
+                        Right $ return $ runReader (evalStateT (computeOffDaySeq day l) (generateWeekends (generalPeriod l))) c
                       Trace -> do
-                        Right $ evalState (computeOffDaySeqTrace day l) (MyEnv {daysCoeff = c, gHolidays = generateWeekends (generalPeriod l)})
+                        Right $ runReader (evalStateT (computeOffDaySeqTrace day l) (generateWeekends (generalPeriod l))) c
                 else Left $ OverlappingPeriods l
 go :: Options -> IO ()
 go o@Options{..} = do

@@ -43,7 +43,7 @@ data MyEnv = MyEnv {daysCoeff :: Float, gHolidays :: [Period]} deriving Show
 
 type EnvReader a = Reader MyEnv a
 
-data MyError = DateStringInvalid String | OverlappingPeriods [Period]
+data MyError = InfoStringInvalid String | DateStringInvalid String | OverlappingPeriods [Period]
              | NegativeAvailableDays [OffDaysInfo] deriving Show
 
 type Merror a = Either MyError a
@@ -74,6 +74,28 @@ dayFromStringMaybe s = do
 dayFromString :: String -> Merror Day
 dayFromString s = case dayFromStringMaybe s of
                     Nothing -> Left (DateStringInvalid s)
+                    Just d -> Right d
+getInfo :: String
+getInfo = [r|[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9];[0-9]*;[0-9]*|]
+
+splitInfo :: String -> (String, String, String)
+splitInfo i = (date, used, available)
+  where date = head s
+        used = s !! 1
+        available = s !! 2
+        s = splitOn ";" (i =~ getInfo :: String)
+
+infoFromStringMaybe :: String -> Maybe OffDaysInfo
+infoFromStringMaybe s = do
+  dateS <- dayFromStringMaybe date
+  usedS <- readMaybe used :: Maybe Integer
+  availableS <- readMaybe available :: Maybe Integer
+  return OffDaysInfo {lastUpdate = dateS, usedDays = usedS, availableDays = availableS}
+  where (date, used, available) = splitInfo s
+
+infoFromString :: String -> Merror OffDaysInfo
+infoFromString s = case infoFromStringMaybe s of
+                    Nothing -> Left (InfoStringInvalid s)
                     Just d -> Right d
 
 fromPreToPeriod :: PrePeriod -> Merror Period
@@ -192,11 +214,13 @@ checkOffDaysCorrect = all ((0 <= ) . availableDays)
 computeOffDaySeqFromString :: String -> [Period] -> EnvError OffDaysInfo
 computeOffDaySeqFromString s l = case dayFromString s of
                                    Left err -> throwE $ Left err
-                                   Right d -> lift $ computeOffDaySeq d l
+                                   Right d -> lift $ computeOffDaySeqInit d l
 
+computeOffDaySeq :: OffDaysInfo -> [Period] -> MyState OffDaysInfo
+computeOffDaySeq = foldlM updateOffDays
 
-computeOffDaySeq :: Day -> [Period] -> MyState OffDaysInfo
-computeOffDaySeq d = foldlM updateOffDays startInfo
+computeOffDaySeqInit :: Day -> [Period] -> MyState OffDaysInfo
+computeOffDaySeqInit d = computeOffDaySeq startInfo
   where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
 
 computeOffDaySeqTrace :: Day -> [Period] -> MyState [OffDaysInfo]

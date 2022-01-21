@@ -79,19 +79,19 @@ getInfo :: String
 getInfo = [r|[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9];[0-9]*;[0-9]*|]
 
 splitInfo :: String -> (String, String, String)
-splitInfo i = (date, used, available)
+splitInfo i = (date, available, used)
   where date = head s
-        used = s !! 1
-        available = s !! 2
+        available = s !! 1
+        used = s !! 2
         s = splitOn ";" (i =~ getInfo :: String)
 
 infoFromStringMaybe :: String -> Maybe OffDaysInfo
 infoFromStringMaybe s = do
   dateS <- dayFromStringMaybe date
-  usedS <- readMaybe used :: Maybe Integer
   availableS <- readMaybe available :: Maybe Integer
-  return OffDaysInfo {lastUpdate = dateS, usedDays = usedS, availableDays = availableS}
-  where (date, used, available) = splitInfo s
+  usedS <- readMaybe used :: Maybe Integer
+  return OffDaysInfo {lastUpdate = dateS, availableDays = availableS, usedDays = usedS}
+  where (date, available, used) = splitInfo s
 
 infoFromString :: String -> Merror OffDaysInfo
 infoFromString s = case infoFromStringMaybe s of

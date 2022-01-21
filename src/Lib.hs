@@ -44,7 +44,7 @@ data MyEnv = MyEnv {daysCoeff :: Float, gHolidays :: [Period]} deriving Show
 type EnvReader a = Reader MyEnv a
 
 data MyError = InfoStringInvalid String | DateStringInvalid String | OverlappingPeriods [Period]
-             | NegativeAvailableDays [OffDaysInfo] deriving Show
+             | NegativeAvailableDays OffDaysInfo deriving Show
 
 type Merror a = Either MyError a
 
@@ -244,3 +244,9 @@ splitPeriodList p l
 
 computeDaysInPeriod :: [Period] -> Integer
 computeDaysInPeriod = sum.map periodLength
+
+negativeCheck :: [OffDaysInfo] -> Merror [OffDaysInfo]
+-- negativeCheck l = if any ((< 0).availableDays) l then Left (NegativeAvailableDays l) else Right l
+negativeCheck l = case find ((< 0).availableDays) l of
+                    Nothing -> Right l
+                    Just o -> Left $ NegativeAvailableDays o

@@ -88,12 +88,18 @@ compute Options {..} d h = case readMaybe _daysCoeff :: Maybe Float of
                 case _mode of
                         Single -> do
                                 -- Right $ return $ runReader (evalStateT (computeOffDaySeq day l) (generateWeekends (generalPeriod l))) c
-                                Right $ return $ runReader (evalStateT (computeOffDaySeq info l) (h ++ weekends)) c
+                                let r = map (\l -> runReader (evalStateT (computeOffDaySeq info l) (h ++ weekends)) c) (inits l)
+                                case negativeCheck r of
+                                  Left err -> Left err
+                                  Right l -> Right [last l]
                         Trace -> do
                                 -- Right $ runReader (evalStateT (computeOffDaySeqTrace day l) (generateWeekends (generalPeriod l))) c
                                 -- Right $ mapM (\l -> runReader (evalStateT (computeOffDaySeqTrace day l) (h ++ weekends)) c)
-                                Right $ map (\l -> runReader (evalStateT (computeOffDaySeq info l) (h ++ weekends)) c) (inits l)
+                                -- Right $ map (\l -> runReader (evalStateT (computeOffDaySeq info l) (h ++ weekends)) c) (inits l)
+                                let r = map (\l -> runReader (evalStateT (computeOffDaySeq info l) (h ++ weekends)) c) (inits l)
+                                negativeCheck r
         else Left $ OverlappingPeriods l
+
 go :: Options -> IO ()
 go o@Options{..} = do
   dates <- readfile _datesFile
@@ -101,7 +107,7 @@ go o@Options{..} = do
   case dates of
     Left err -> print $ "Something went wrong " ++ err
     Right d ->  case holidays of
-      Left err -> print $ "Something went wrong" ++ err
+      Left err -> print $ "Something went wrong " ++ err
       Right h -> case compute o d h of
                  Left err -> print err
                  Right result -> print result

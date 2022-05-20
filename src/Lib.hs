@@ -52,7 +52,7 @@ type Merror a = Either MyError a
 -- type EnvError a = ExceptT (Either MyError a) (Reader MyEnv) a
 type EnvError a = ExceptT (Either MyError a) (StateT [Period] (Reader Float)) a
 
-type MyState a = StateT [Period] (Reader Float) a
+type MyState a = StateT ([OffDaysInfo],[Period]) (Reader Float) a
 
 getDate :: String
 getDate = [r|[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]|]
@@ -187,25 +187,28 @@ data OffDaysInfo = OffDaysInfo { lastUpdate :: Day,
 
 updateOffDays :: OffDaysInfo -> Period -> MyState OffDaysInfo
 updateOffDays i p = do
-  gHolidays <- get
+  (l,gHolidays) <- get
   -- (before, after) <- traceShow (splitPeriodList p gHolidays) return $ splitPeriodList p gHolidays
   (before, after) <- return $ splitPeriodList p gHolidays
-  put after
+  -- put (,after)
   cOffDas <- lift $ computeOffDays (lastUpdate i) p
   dCoeff <- lift ask
   -- let newUsedDays = traceShow before computeWorkingDays before p
   let newUsedDays = computeWorkingDays before p
-  return $ OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
-                         availableDays = min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
-                         usedDays = usedDays i + newUsedDays }
-                         -- usedDays = newUsedDays }
+  let result = OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
+                             availableDays = traceShow (newAvailableDays cOffDas, flooredDays dCoeff) min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
+                             -- availableDays = min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
+                             usedDays = usedDays i + newUsedDays }
+               -- usedDays = newUsedDays }
+  put (result : l,after)
+  return result
   where currentMonths = diffGregorianDurationClip (pend p) (lastUpdate i)
         newAvailableDays offdays = offdays + availableDays i
         flooredDays c = floor $ 12 * c
 
 
 preProcessPeriods :: [PrePeriod] -> Merror [Period]
-preProcessPeriods = fmap sort.mapM fromPreToPeriod
+preProcessPeriods = fmap sort . mapM fromPreToPeriod
 
 checkPeriodsPrecond :: [Period] -> Bool
 checkPeriodsPrecond l = and $ zipWith (<=) ends starts
@@ -216,23 +219,25 @@ checkOffDaysCorrect :: [OffDaysInfo] -> Bool
 checkOffDaysCorrect = all ((0 <= ) . availableDays)
 
 -- type EnvError a = ExceptT (Either MyError a) (Reader MyEnv) a
-computeOffDaySeqFromString :: String -> [Period] -> EnvError OffDaysInfo
-computeOffDaySeqFromString s l = case dayFromString s of
-                                   Left err -> throwE $ Left err
-                                   Right d -> lift $ computeOffDaySeqInit d l
+-- computeOffDaySeqFromString :: String -> [Period] -> EnvError OffDaysInfo
+-- computeOffDaySeqFromString s l = case dayFromString s of
+--                                    Left err -> throwE $ Left err
+--                                    Right d -> lift $ computeOffDaySeqInit d l
 
-computeOffDaySeq :: OffDaysInfo -> [Period] -> MyState OffDaysInfo
-computeOffDaySeq = foldlM updateOffDays
-
-computeOffDaySeqInit :: Day -> [Period] -> MyState OffDaysInfo
+computeOffDaySeq :: OffDaysInfo -> [Period] -> MyState [OffDaysInfo]
+computeOffDaySeq i l = do
+  x <- foldlM updateOffDays i l
+  (t,_) <- get
+  return $ x:t
+computeOffDaySeqInit :: Day -> [Period] -> MyState [OffDaysInfo]
 computeOffDaySeqInit d = computeOffDaySeq startInfo
   where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
 
-computeOffDaySeqTrace :: Day -> [Period] -> MyState [OffDaysInfo]
--- computeOffDaySeqTrace d l = map (computeOffDaySeq d) (inits l)
--- computeOffDaySeqTrace d = scanl updateOffDays startInfo
-computeOffDaySeqTrace d l = mapM (foldlM updateOffDays startInfo) (inits l)
-  where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
+-- computeOffDaySeqTrace :: Day -> [Period] -> MyState [OffDaysInfo]
+-- -- computeOffDaySeqTrace d l = map (computeOffDaySeq d) (inits l)
+-- -- computeOffDaySeqTrace d = scanl updateOffDays startInfo
+-- computeOffDaySeqTrace d l = mapM (foldlM updateOffDays startInfo) (inits l)
+--   where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
 
 isCorrectOffDays :: [OffDaysInfo] -> Bool
 isCorrectOffDays = all ((0 <=) . availableDays)

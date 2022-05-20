@@ -20,6 +20,8 @@ import Lib
 import Text.RawString.QQ
 import Text.Regex.TDFA
 
+import Debug.Trace
+
 data Mode = Single | Trace
 data Options = Options {
   _initDate :: String,
@@ -87,11 +89,12 @@ compute Options {..} d h = case readMaybe _daysCoeff :: Maybe Float of
                 do
                 info <- infoFromString _initDate
                 let weekends = generateWeekends (generalPeriod l)
-                let hList = (sort.nub) (h1 ++ weekends)
+                let hList = ([]::[OffDaysInfo],(sort.nub) (h1 ++ weekends))
                 case _mode of
                         Single -> do
                                 -- Right $ return $ runReader (evalStateT (computeOffDaySeq day l) (generateWeekends (generalPeriod l))) c
-                                let r = map (\l -> runReader (evalStateT (computeOffDaySeq info l) hList) c) (inits l)
+                                -- let r =  map (\l -> runReader (evalStateT (computeOffDaySeq info l) hList) c) (inits l)
+                                let r = runReader (evalStateT (computeOffDaySeq info l) hList) c
                                 case negativeCheck r of
                                   Left err -> Left err
                                   Right l -> Right [last l]
@@ -99,9 +102,10 @@ compute Options {..} d h = case readMaybe _daysCoeff :: Maybe Float of
                                 -- Right $ runReader (evalStateT (computeOffDaySeqTrace day l) (generateWeekends (generalPeriod l))) c
                                 -- Right $ mapM (\l -> runReader (evalStateT (computeOffDaySeqTrace day l) (h ++ weekends)) c)
                                 -- Right $ map (\l -> runReader (evalStateT (computeOffDaySeq info l) (h ++ weekends)) c) (inits l)
-                                let r = map (\l -> runReader (evalStateT (computeOffDaySeq info l) hList) c) (inits l)
-                                -- Right r
-                                negativeCheck r
+                                -- let r = traceShow (inits l) map (\l -> runReader (evalStateT (computeOffDaySeq info l) hList) c) (inits l)
+                                let r = runReader (evalStateT (computeOffDaySeq info l) hList) c
+                                Right r
+                                -- negativeCheck r
         else Left $ OverlappingPeriods l
 
 go :: Options -> IO ()

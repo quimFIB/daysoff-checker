@@ -100,8 +100,8 @@ compute Options {..} d h = case readMaybe _daysCoeff :: Maybe Float of
                                 -- Right $ mapM (\l -> runReader (evalStateT (computeOffDaySeqTrace day l) (h ++ weekends)) c)
                                 -- Right $ map (\l -> runReader (evalStateT (computeOffDaySeq info l) (h ++ weekends)) c) (inits l)
                                 let r = map (\l -> runReader (evalStateT (computeOffDaySeq info l) hList) c) (inits l)
-                                Right r
-                                -- negativeCheck r
+                                -- Right r
+                                negativeCheck r
         else Left $ OverlappingPeriods l
 
 go :: Options -> IO ()

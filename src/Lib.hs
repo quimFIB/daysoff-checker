@@ -188,15 +188,17 @@ data OffDaysInfo = OffDaysInfo { lastUpdate :: Day,
 updateOffDays :: OffDaysInfo -> Period -> MyState OffDaysInfo
 updateOffDays i p = do
   gHolidays <- get
-  (before, after) <- traceShow (splitPeriodList p gHolidays) return $ splitPeriodList p gHolidays
+  -- (before, after) <- traceShow (splitPeriodList p gHolidays) return $ splitPeriodList p gHolidays
+  (before, after) <- return $ splitPeriodList p gHolidays
   put after
   cOffDas <- lift $ computeOffDays (lastUpdate i) p
   dCoeff <- lift ask
-  let newUsedDays = traceShow before computeWorkingDays before p
+  -- let newUsedDays = traceShow before computeWorkingDays before p
+  let newUsedDays = computeWorkingDays before p
   return $ OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
                          availableDays = min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
-                         -- usedDays = usedDays i + newUsedDays }
-                         usedDays = newUsedDays }
+                         usedDays = usedDays i + newUsedDays }
+                         -- usedDays = newUsedDays }
   where currentMonths = diffGregorianDurationClip (pend p) (lastUpdate i)
         newAvailableDays offdays = offdays + availableDays i
         flooredDays c = floor $ 12 * c

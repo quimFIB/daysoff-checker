@@ -23,6 +23,7 @@ import Data.Maybe
 import Control.Monad.State (StateT, get, put)
 import Control.Monad.Trans.State.Lazy (State)
 import Control.Monad.Identity (Identity)
+import Debug.Trace
 
 data PrePeriod = PrePeriod
     { start :: !String
@@ -163,11 +164,12 @@ computeWorkingDays ps p = howManyAccountable ps (pstart p) (pend p)
 
 howManyAccountable :: [Period] -> Day -> Day -> Integer
 howManyAccountable ps s e = total - general
+-- howManyAccountable ps s e = total*10000000 + general
   where  total = diffDays e s + 1
          general = sum $ map periodLength ps
 
-spentDays :: [Period] -> [Period] -> Integer
-spentDays ps = sum . map (computeWorkingDays ps)
+-- spentDays :: [Period] -> [Period] -> Integer
+-- spentDays ps = sum . map (computeWorkingDays ps)
 
 computeOffDays :: Day -> Period -> Reader Float Integer
 computeOffDays i0 p = do
@@ -186,14 +188,15 @@ data OffDaysInfo = OffDaysInfo { lastUpdate :: Day,
 updateOffDays :: OffDaysInfo -> Period -> MyState OffDaysInfo
 updateOffDays i p = do
   gHolidays <- get
-  (before, after) <- return $ splitPeriodList p gHolidays
+  (before, after) <- traceShow (splitPeriodList p gHolidays) return $ splitPeriodList p gHolidays
   put after
   cOffDas <- lift $ computeOffDays (lastUpdate i) p
   dCoeff <- lift ask
-  let newUsedDays = computeWorkingDays before p
+  let newUsedDays = traceShow before computeWorkingDays before p
   return $ OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
                          availableDays = min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
-                         usedDays = usedDays i + newUsedDays }
+                         -- usedDays = usedDays i + newUsedDays }
+                         usedDays = newUsedDays }
   where currentMonths = diffGregorianDurationClip (pend p) (lastUpdate i)
         newAvailableDays offdays = offdays + availableDays i
         flooredDays c = floor $ 12 * c
@@ -250,3 +253,5 @@ negativeCheck :: [OffDaysInfo] -> Merror [OffDaysInfo]
 negativeCheck l = case find ((< 0).availableDays) l of
                     Nothing -> Right l
                     Just o -> Left $ NegativeAvailableDays o
+-- filterRelevantDates :: OffDaysInfo -> [Period] -> [Period]
+-- filterRelevantDates o l = dropWhile (<= lastUpdate) l

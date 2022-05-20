@@ -87,7 +87,7 @@ compute Options {..} d h = case readMaybe _daysCoeff :: Maybe Float of
                 do
                 info <- infoFromString _initDate
                 let weekends = generateWeekends (generalPeriod l)
-                let hList = sort (h1 ++ weekends)
+                let hList = (sort.nub) (h1 ++ weekends)
                 case _mode of
                         Single -> do
                                 -- Right $ return $ runReader (evalStateT (computeOffDaySeq day l) (generateWeekends (generalPeriod l))) c

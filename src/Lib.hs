@@ -196,8 +196,8 @@ updateOffDays i p = do
   -- let newUsedDays = traceShow before computeWorkingDays before p
   let newUsedDays = computeWorkingDays before p
   let result = OffDaysInfo { lastUpdate = addDays (negate (cdDays currentMonths)) (pend p),
-                             availableDays = traceShow (newAvailableDays cOffDas, flooredDays dCoeff) min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
-                             -- availableDays = min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
+                             -- availableDays = traceShow (newAvailableDays cOffDas, flooredDays dCoeff) min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
+                             availableDays = min (newAvailableDays cOffDas) (flooredDays dCoeff) - newUsedDays,
                              usedDays = usedDays i + newUsedDays }
                -- usedDays = newUsedDays }
   put (result : l,after)
@@ -228,7 +228,7 @@ computeOffDaySeq :: OffDaysInfo -> [Period] -> MyState [OffDaysInfo]
 computeOffDaySeq i l = do
   x <- foldlM updateOffDays i l
   (t,_) <- get
-  return $ x:t
+  return $ reverse t
 computeOffDaySeqInit :: Day -> [Period] -> MyState [OffDaysInfo]
 computeOffDaySeqInit d = computeOffDaySeq startInfo
   where startInfo = OffDaysInfo {lastUpdate = d, availableDays = 0, usedDays = 0}
